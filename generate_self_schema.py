@@ -30,6 +30,17 @@ except ImportError:
     TypesUnionType = TypingUnionType
     UnionType = TypingUnionType
 
+try:
+    import annotationlib
+
+    def get_annotations(obj):
+        return {k: annotationlib.ForwardRef(v) for k, v in annotationlib.get_annotations(obj, format=annotationlib.Format.STRING).items()}
+
+
+except ImportError:
+    def get_annotations(obj):
+        return obj.__annotations__
+
 
 THIS_DIR = Path(__file__).parent
 SAVE_PATH = THIS_DIR / 'src' / 'self_schema.py'
@@ -121,7 +132,7 @@ def type_dict_schema(  # noqa: C901
     required_keys = getattr(typed_dict, '__required_keys__', set())
     fields = {}
 
-    for field_name, field_type in typed_dict.__annotations__.items():
+    for field_name, field_type in get_annotations(typed_dict).items():
         required = field_name in required_keys
         schema = None
         fr_arg = None
@@ -194,7 +205,9 @@ def all_literal_values(type_: type[core_schema.Literal]) -> list[any]:
 
 
 def eval_forward_ref(type_: Any) -> Any:
-    if sys.version_info < (3, 12, 4):
+    if sys.version_info >= (3, 14, 0):
+        return type_.evaluate(globals=core_schema.__dict__)
+    elif sys.version_info < (3, 12, 4):
         return type_._evaluate(core_schema.__dict__, None, recursive_guard=set())
     else:
         return type_._evaluate(core_schema.__dict__, None, type_params=set(), recursive_guard=set())
@@ -208,7 +221,7 @@ def main() -> None:
 
     choices = {}
     for s in schema_union.__args__:
-        type_ = s.__annotations__['type']
+        type_ = get_annotations(s)['type']
         m = re.search(r"Literal\['(.+?)']", type_.__forward_arg__)
         assert m, f'Unknown schema type: {type_}'
         key = m.group(1)
